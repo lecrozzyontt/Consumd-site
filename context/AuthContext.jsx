@@ -4,37 +4,34 @@ import { supabase } from '../services/supabase';
 const AuthContext = createContext(null);
 
 export function AuthProvider({ children }) {
-  const [user, setUser]       = useState(null);
+  const [user, setUser] = useState(null);
   const [profile, setProfile] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     console.log('[AuthContext] Initializing...');
-    
-    // Get initial session - DON'T wait for profile
+
     supabase.auth.getSession().then(({ data: { session } }) => {
-      console.log('[AuthContext] Session:', session?.user?.id);
       setUser(session?.user ?? null);
-      setLoading(false); // Set to false immediately
-      
-      // Create/fetch profile in background (non-blocking)
+      setLoading(false);
+
       if (session?.user) {
-        ensureProfile(session.user.id, session.user.email);
+        ensureProfile(session.user.id);
       }
     }).catch(err => {
       console.error('[AuthContext] getSession error:', err);
       setLoading(false);
     });
 
-    // Listen for auth changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('[AuthContext] Auth state changed:', event);
+
         setUser(session?.user ?? null);
         setLoading(false);
-        
+
         if (session?.user) {
-          await ensureProfile(session.user.id, session.user.email);
+          await ensureProfile(session.user.id);
         } else {
           setProfile(null);
         }
@@ -44,28 +41,36 @@ export function AuthProvider({ children }) {
     return () => subscription.unsubscribe();
   }, []);
 
-  async function ensureProfile(userId, email) {
-    console.log('[AuthContext] Ensuring profile exists for:', userId);
+  /**
+   * PROFILE HANDLING (READ-ONLY SAFE)
+   * - Never guesses username
+   * - Never overwrites existing username
+   */
+  async function ensureProfile(userId) {
     try {
-      const { data: existing } = await supabase
+      const { data: existing, error: fetchError } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
+        .maybeSingle();
 
+      if (fetchError) {
+        console.error('[AuthContext] Profile fetch error:', fetchError);
+        return;
+      }
+
+      // If profile exists → just use it
       if (existing) {
-        console.log('[AuthContext] Profile exists');
         setProfile(existing);
         return;
       }
 
-      // Create profile if missing
-      console.log('[AuthContext] Creating profile...');
+      // Only create minimal profile (NO username guessing)
       const { data: newProfile, error } = await supabase
         .from('profiles')
         .insert([{
           id: userId,
-          username: email.split('@')[0],
+          username: null, // ✅ important: never auto-fill email
           created_at: new Date().toISOString(),
         }])
         .select()
@@ -73,47 +78,63 @@ export function AuthProvider({ children }) {
 
       if (error) {
         console.error('[AuthContext] Profile creation error:', error);
-      } else {
-        console.log('[AuthContext] Profile created');
-        setProfile(newProfile);
+        return;
       }
+
+      setProfile(newProfile);
     } catch (err) {
       console.error('[AuthContext] ensureProfile error:', err);
     }
   }
 
+  /**
+   * SIGN UP (ONLY PLACE THAT SETS USERNAME)
+   */
   async function signUp(email, password, username) {
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { 
-      data: { username } 
-    },
-  });
-  if (error) throw error;
-  
-  if (data.user) {
-    // Create profile with the username provided
-    await supabase
-      .from('profiles')
-      .insert([{
-        id: data.user.id,
-        username: username,
-        created_at: new Date().toISOString(),
-      }])
-      .select()
-      .single();
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: { username }, // stored in auth metadata
+      },
+    });
+
+    if (error) throw error;
+
+    if (data.user) {
+      // Create profile with correct username ONLY ON SIGNUP
+      const { data: profileData, error: profileError } = await supabase
+        .from('profiles')
+        .insert([{
+          id: data.user.id,
+          username, // ✅ trusted user input only
+          created_at: new Date().toISOString(),
+        }])
+        .select()
+        .single();
+
+      if (profileError) {
+        console.error('[AuthContext] profile insert error:', profileError);
+      } else {
+        setProfile(profileData);
+      }
+    }
+
+    return data;
   }
-  return data;
-}
 
   async function signIn(email, password) {
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+
     if (error) throw error;
-    
+
     if (data.user) {
-      await ensureProfile(data.user.id, data.user.email);
+      await ensureProfile(data.user.id);
     }
+
     return data;
   }
 
@@ -128,7 +149,9 @@ export function AuthProvider({ children }) {
       .eq('id', user.id)
       .select()
       .single();
+
     if (error) throw error;
+
     setProfile(data);
     return data;
   }
@@ -139,9 +162,10 @@ export function AuthProvider({ children }) {
         .from('profiles')
         .select('*')
         .eq('id', userId)
-        .single();
-      
+        .maybeSingle();
+
       if (error) throw error;
+
       setProfile(data);
       return data;
     } catch (err) {
@@ -151,7 +175,19 @@ export function AuthProvider({ children }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, profile, loading, signUp, signIn, signOut, updateProfile, fetchProfile, ensureProfile }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        profile,
+        loading,
+        signUp,
+        signIn,
+        signOut,
+        updateProfile,
+        fetchProfile,
+        ensureProfile,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );
