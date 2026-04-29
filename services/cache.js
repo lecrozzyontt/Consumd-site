@@ -3,6 +3,9 @@ const inflight = new Map();   // key -> Promise<value>
 
 const SESSION_PREFIX = 'consumd_cache:';
 
+/* -----------------------------------------
+   Session storage helpers
+------------------------------------------ */
 function readSession(key) {
   try {
     const raw = sessionStorage.getItem(SESSION_PREFIX + key);
@@ -35,21 +38,28 @@ function writeSession(key, entry) {
 }
 
 /* -----------------------------------------
-   Smart validity check
-   Prevents caching bad API responses
+   OpenLibrary-safe validity check
 ------------------------------------------ */
 function isBadValue(value) {
   if (value == null) return true;
 
-  // empty arrays are NOT cached (main fix for OpenLibrary issue)
   if (Array.isArray(value) && value.length === 0) return true;
+
+  if (typeof value === 'object') {
+    if (Object.keys(value).length === 0) return true;
+    if (value.error) return true;
+
+    // OpenLibrary-specific safety checks
+    if (value.docs && value.docs.length === 0) return true;
+    if (value.works && value.works.length === 0) return true;
+  }
 
   return false;
 }
 
-/**
- * Get cached value or compute it.
- */
+/* -----------------------------------------
+   Main cache function
+------------------------------------------ */
 export async function cached(key, fetcher, opts = {}) {
   const ttl = opts.ttl ?? 10 * 60 * 1000;
   const persist = opts.persist ?? true;
@@ -57,19 +67,19 @@ export async function cached(key, fetcher, opts = {}) {
 
   const now = Date.now();
 
-  // 1. FORCE bypass cache (debug option)
+  // 1. FORCE bypass
   if (force) {
     memCache.delete(key);
     try { sessionStorage.removeItem(SESSION_PREFIX + key); } catch {}
   }
 
-  // 2. Memory cache hit
+  // 2. Memory cache
   const mem = memCache.get(key);
   if (mem && mem.expires > now) {
     return mem.value;
   }
 
-  // 3. SessionStorage hydration
+  // 3. Session cache hydration
   if (persist) {
     const ses = readSession(key);
 
@@ -84,11 +94,8 @@ export async function cached(key, fetcher, opts = {}) {
     return inflight.get(key);
   }
 
-  const p = (async () => {
-    try {
-      const value = await fetcher();
-
-      // 🚨 CRITICAL FIX: DO NOT CACHE BAD DATA
+  const p = fetcher()
+    .then((value) => {
       if (!isBadValue(value)) {
         const entry = {
           value,
@@ -103,20 +110,21 @@ export async function cached(key, fetcher, opts = {}) {
       }
 
       return value;
-    } catch (err) {
+    })
+    .catch((err) => {
       console.error('[cache fetcher error]', key, err);
       return [];
-    } finally {
+    })
+    .finally(() => {
       inflight.delete(key);
-    }
-  })();
+    });
 
   inflight.set(key, p);
   return p;
 }
 
 /* -----------------------------------------
-   Remove single entry
+   Invalidate single key
 ------------------------------------------ */
 export function invalidate(key) {
   memCache.delete(key);
@@ -126,7 +134,7 @@ export function invalidate(key) {
 }
 
 /* -----------------------------------------
-   Remove by prefix
+   Invalidate by prefix
 ------------------------------------------ */
 export function invalidatePrefix(prefix) {
   for (const k of memCache.keys()) {
@@ -146,7 +154,7 @@ export function invalidatePrefix(prefix) {
 }
 
 /* -----------------------------------------
-   Clear everything
+   Clear all cache
 ------------------------------------------ */
 export function clearAll() {
   memCache.clear();
