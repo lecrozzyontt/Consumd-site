@@ -129,11 +129,10 @@ export default function Profile() {
     if (!file) return;
     setUploadingAvatar(true);
     try {
-      // Ensure we safely extract the extension
-      const safeExt = file.name.split('.').pop().toLowerCase().replace(/[^a-z0-9]/g, '');
-      // Generate a safe unique filename instead of using file.name directly to avoid path traversal
-      const safeFileName = `avatar_${Date.now()}.${safeExt}`;
-      const path = `${profile.id}/${safeFileName}`;
+      const ext  = file.name.split('.').pop();
+      const path = `${profile.id}/avatar.${ext}`;
+      
+      if (path.includes('..')) throw new Error('Invalid path');
       
       const { error: uploadError } = await supabase.storage
         .from('avatars')
