@@ -52,7 +52,7 @@ export default function LogModal({ media, onClose, onSaved }) {
           cover_url:          media.cover_url || media.coverImage || null,
           genre:              media.genre || '',
           external_id:        media.external_id || '',
-          rating:             rating > 0 ? rating : null,
+          rating:             rating > -1 ? rating : null,
           review:             notes.trim() || null,
           status:             status || 'completed',
           logged_at:          finalDate,
