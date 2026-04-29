@@ -113,4 +113,8 @@ export async function fetchBookDetails(workKey) {
       };
     } catch (e) { console.error(e); return null; }
   }, { ttl: DETAIL_TTL });
+
+  const finalUrl = new URL(`${BASE}${cleanKey}.json`, BASE);
+  if (finalUrl.hostname !== 'openlibrary.org') throw new Error('Invalid URL');
+  const res = await fetch(finalUrl.href);
 }

@@ -94,4 +94,7 @@ export async function fetchGameDetails(id) {
       };
     } catch (e) { console.error(e); return null; }
   }, { ttl: DETAIL_TTL });
+  const finalUrl = new URL(`${BASE}${path}${sep}key=${RAWG_KEY}`, BASE);
+  if (finalUrl.hostname !== 'api.rawg.io') throw new Error('Invalid URL');
+  const res = await fetch(finalUrl.href);
 }

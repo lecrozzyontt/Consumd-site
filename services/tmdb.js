@@ -20,7 +20,17 @@ async function cached(key, fetcher, { ttl } = { ttl: 3600000 }) {
 async function tmdb(endpoint) {
   const separator = endpoint.includes('?') ? '&' : '?';
   const url = `${BASE}${endpoint}${separator}api_key=${API_KEY}`;
-  const res = await fetch(url);
+  
+  // 1. Parse the URL safely
+  const parsedUrl = new URL(url, BASE);
+  
+  // 2. Validate the domain to prevent SSRF/hijacking
+  if (parsedUrl.hostname !== 'api.themoviedb.org') {
+    throw new Error('Invalid API request origin.');
+  }
+
+  // 3. Fetch using the validated URL string
+  const res = await fetch(parsedUrl.href);
   if (!res.ok) throw new Error(`TMDB error: ${res.status}`);
   return res.json();
 }
