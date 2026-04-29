@@ -77,10 +77,23 @@ export default function Auth() {
           </button>
           <button
             className={mode === 'signup' ? 'active' : ''}
-            onClick={() => { setMode('signup'); setError(''); }}
-          >
-            Create Account
-          </button>
+                onClick={async () => {
+                  setError('');
+
+                  const { error } = await supabase.auth.signUp({
+                    email,
+                    password,
+                  });
+
+                  if (error) {
+                    setError(error.message);
+                  } else {
+                    alert("Check your email to confirm your account 📧");
+                  }
+                }}
+              >
+                Create Account
+            </button>
         </div>
 
         {/* OAuth buttons */}
