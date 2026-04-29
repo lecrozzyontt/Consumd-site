@@ -6,13 +6,13 @@ import LegalModal from '../components/LegalModal';
 import './Auth.css';
 
 export default function Auth() {
-  const [mode, setMode]         = useState('login');
-  const [email, setEmail]       = useState('');
+  const [mode, setMode] = useState('login');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
-  const [error, setError]       = useState('');
-  const [loading, setLoading]   = useState(false);
-  const [oauthLoading, setOauthLoading] = useState(null); // 'google' | null
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
+  const [oauthLoading, setOauthLoading] = useState(null);
   const [showLegal, setShowLegal] = useState(false);
 
   const { signIn, signUp } = useAuth();
@@ -26,15 +26,21 @@ export default function Auth() {
     try {
       if (mode === 'login') {
         await signIn(email, password);
+        navigate('/');
       } else {
         if (username.length < 3) {
           setError('Username must be at least 3 characters.');
           setLoading(false);
           return;
         }
-        await signUp(email, password, username);
+
+        const result = await signUp(email, password, username);
+
+        // ✅ Show confirmation message AFTER successful signup
+        alert('A confirmation email has been sent 📧 Please check your inbox to activate your account.');
+
+        navigate('/');
       }
-      navigate('/');
     } catch (err) {
       setError(err.message || 'Something went wrong.');
     } finally {
@@ -45,17 +51,18 @@ export default function Auth() {
   const handleOAuth = async (provider) => {
     setError('');
     setOauthLoading(provider);
+
     const { error } = await supabase.auth.signInWithOAuth({
       provider,
       options: {
         redirectTo: `${window.location.origin}/`,
       },
     });
+
     if (error) {
       setError(error.message || `Failed to sign in with ${provider}.`);
       setOauthLoading(null);
     }
-    // On success Supabase redirects the browser — no further action needed
   };
 
   return (
@@ -71,29 +78,24 @@ export default function Auth() {
         <div className="auth-tabs">
           <button
             className={mode === 'login' ? 'active' : ''}
-            onClick={() => { setMode('login'); setError(''); }}
+            onClick={() => {
+              setMode('login');
+              setError('');
+            }}
           >
             Sign In
           </button>
+
+          {/* ✅ FIXED: no more signup request here */}
           <button
             className={mode === 'signup' ? 'active' : ''}
-                onClick={async () => {
-                  setError('');
-
-                  const { error } = await supabase.auth.signUp({
-                    email,
-                    password,
-                  });
-
-                  if (error) {
-                    setError(error.message);
-                  } else {
-                    alert("Check your email to confirm your account 📧");
-                  }
-                }}
-              >
-                Create Account
-            </button>
+            onClick={() => {
+              setMode('signup');
+              setError('');
+            }}
+          >
+            Create Account
+          </button>
         </div>
 
         {/* OAuth buttons */}
@@ -111,8 +113,6 @@ export default function Auth() {
             )}
             Continue with Google
           </button>
-
-
         </div>
 
         <div className="auth-divider">
@@ -127,7 +127,7 @@ export default function Auth() {
                 type="text"
                 placeholder="yourname"
                 value={username}
-                onChange={e => setUsername(e.target.value)}
+                onChange={(e) => setUsername(e.target.value)}
                 required
                 autoComplete="username"
                 minLength={3}
@@ -141,7 +141,7 @@ export default function Auth() {
               type="email"
               placeholder="you@example.com"
               value={email}
-              onChange={e => setEmail(e.target.value)}
+              onChange={(e) => setEmail(e.target.value)}
               required
               autoComplete="email"
             />
@@ -153,7 +153,7 @@ export default function Auth() {
               type="password"
               placeholder={mode === 'signup' ? 'Min. 6 characters' : '••••••••'}
               value={password}
-              onChange={e => setPassword(e.target.value)}
+              onChange={(e) => setPassword(e.target.value)}
               required
               minLength={6}
               autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
@@ -166,7 +166,10 @@ export default function Auth() {
                 <button
                   type="button"
                   className="legal-link"
-                  onClick={(e) => { e.preventDefault(); setShowLegal(true); }}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowLegal(true);
+                  }}
                 >
                   By creating an account, you agree to our Terms of Service, Privacy Policy and accept our cookies.
                 </button>
@@ -177,11 +180,7 @@ export default function Auth() {
           {error && <p className="auth-error">{error}</p>}
 
           <button type="submit" className="auth-submit" disabled={loading}>
-            {loading ? (
-              <span className="btn-spinner" />
-            ) : (
-              mode === 'login' ? 'Sign In' : 'Create Account'
-            )}
+            {loading ? <span className="btn-spinner" /> : mode === 'login' ? 'Sign In' : 'Create Account'}
           </button>
         </form>
 
@@ -189,7 +188,12 @@ export default function Auth() {
           {mode === 'login'
             ? "Don't have an account? "
             : 'Already have an account? '}
-          <button onClick={() => { setMode(mode === 'login' ? 'signup' : 'login'); setError(''); }}>
+          <button
+            onClick={() => {
+              setMode(mode === 'login' ? 'signup' : 'login');
+              setError('');
+            }}
+          >
             {mode === 'login' ? 'Sign up' : 'Sign in'}
           </button>
         </p>
@@ -210,4 +214,3 @@ function GoogleIcon() {
     </svg>
   );
 }
-
