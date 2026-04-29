@@ -1,21 +1,5 @@
-/* ============================================================
-   Lightweight cache for API responses + profile lookups.
-
-   Tiered strategy:
-     1. In-memory Map  — fastest, lives until full reload.
-     2. sessionStorage — survives client-side navigation; cleared
-        when the tab closes. Good for things like "trending"
-        results we don't want to re-hit on every Discover visit.
-
-   Each entry is wrapped with `{ value, expires }` so we can
-   honor a per-call TTL.
-
-   Also exposes `inflight` map so concurrent identical requests
-   share a single Promise instead of fanning out duplicates.
-   ============================================================ */
-
-const memCache  = new Map();   // key -> { value, expires }
-const inflight  = new Map();   // key -> Promise<value>
+const memCache = new Map();   // key -> { value, expires }
+const inflight = new Map();   // key -> Promise<value>
 
 const SESSION_PREFIX = 'consumd_cache:';
 
@@ -23,12 +7,16 @@ function readSession(key) {
   try {
     const raw = sessionStorage.getItem(SESSION_PREFIX + key);
     if (!raw) return null;
+
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.expires !== 'number') return null;
+
+    // expired
     if (parsed.expires < Date.now()) {
       sessionStorage.removeItem(SESSION_PREFIX + key);
       return null;
     }
+
     return parsed;
   } catch {
     return null;
@@ -37,49 +25,87 @@ function readSession(key) {
 
 function writeSession(key, entry) {
   try {
-    sessionStorage.setItem(SESSION_PREFIX + key, JSON.stringify(entry));
+    sessionStorage.setItem(
+      SESSION_PREFIX + key,
+      JSON.stringify(entry)
+    );
   } catch {
-    /* quota exceeded or storage disabled — non-fatal */
+    // ignore quota / disabled storage
   }
 }
 
+/* -----------------------------------------
+   Smart validity check
+   Prevents caching bad API responses
+------------------------------------------ */
+function isBadValue(value) {
+  if (value == null) return true;
+
+  // empty arrays are NOT cached (main fix for OpenLibrary issue)
+  if (Array.isArray(value) && value.length === 0) return true;
+
+  return false;
+}
+
 /**
- * Get a cached value or compute + cache it.
- *
- * @param {string} key   stable cache key
- * @param {() => Promise<any>} fetcher async producer
- * @param {object} opts
- *   - ttl:        ms before the entry is treated as stale (default 10 min)
- *   - persist:    also write to sessionStorage (default true)
+ * Get cached value or compute it.
  */
 export async function cached(key, fetcher, opts = {}) {
-  const ttl     = opts.ttl     ?? 10 * 60 * 1000; // 10 minutes
+  const ttl = opts.ttl ?? 10 * 60 * 1000;
   const persist = opts.persist ?? true;
-  const now     = Date.now();
+  const force = opts.force ?? false;
 
-  // 1. In-memory hit
+  const now = Date.now();
+
+  // 1. FORCE bypass cache (debug option)
+  if (force) {
+    memCache.delete(key);
+    try { sessionStorage.removeItem(SESSION_PREFIX + key); } catch {}
+  }
+
+  // 2. Memory cache hit
   const mem = memCache.get(key);
-  if (mem && mem.expires > now) return mem.value;
+  if (mem && mem.expires > now) {
+    return mem.value;
+  }
 
-  // 2. SessionStorage hit (rehydrate to memory)
+  // 3. SessionStorage hydration
   if (persist) {
     const ses = readSession(key);
-    if (ses) {
+
+    if (ses && !isBadValue(ses.value)) {
       memCache.set(key, ses);
       return ses.value;
     }
   }
 
-  // 3. De-dup concurrent requests
-  if (inflight.has(key)) return inflight.get(key);
+  // 4. Deduplicate inflight requests
+  if (inflight.has(key)) {
+    return inflight.get(key);
+  }
 
   const p = (async () => {
     try {
       const value = await fetcher();
-      const entry = { value, expires: now + ttl };
-      memCache.set(key, entry);
-      if (persist) writeSession(key, entry);
+
+      // 🚨 CRITICAL FIX: DO NOT CACHE BAD DATA
+      if (!isBadValue(value)) {
+        const entry = {
+          value,
+          expires: now + ttl,
+        };
+
+        memCache.set(key, entry);
+
+        if (persist) {
+          writeSession(key, entry);
+        }
+      }
+
       return value;
+    } catch (err) {
+      console.error('[cache fetcher error]', key, err);
+      return [];
     } finally {
       inflight.delete(key);
     }
@@ -89,32 +115,48 @@ export async function cached(key, fetcher, opts = {}) {
   return p;
 }
 
-/** Drop a single entry from both caches. */
+/* -----------------------------------------
+   Remove single entry
+------------------------------------------ */
 export function invalidate(key) {
   memCache.delete(key);
-  try { sessionStorage.removeItem(SESSION_PREFIX + key); } catch {}
+  try {
+    sessionStorage.removeItem(SESSION_PREFIX + key);
+  } catch {}
 }
 
-/** Drop every entry whose key starts with `prefix`. */
+/* -----------------------------------------
+   Remove by prefix
+------------------------------------------ */
 export function invalidatePrefix(prefix) {
   for (const k of memCache.keys()) {
-    if (k.startsWith(prefix)) memCache.delete(k);
+    if (k.startsWith(prefix)) {
+      memCache.delete(k);
+    }
   }
+
   try {
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const k = sessionStorage.key(i);
-      if (k && k.startsWith(SESSION_PREFIX + prefix)) sessionStorage.removeItem(k);
+      if (k && k.startsWith(SESSION_PREFIX + prefix)) {
+        sessionStorage.removeItem(k);
+      }
     }
   } catch {}
 }
 
-/** Wipe everything we own. Useful after sign-out. */
+/* -----------------------------------------
+   Clear everything
+------------------------------------------ */
 export function clearAll() {
   memCache.clear();
+
   try {
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const k = sessionStorage.key(i);
-      if (k && k.startsWith(SESSION_PREFIX)) sessionStorage.removeItem(k);
+      if (k && k.startsWith(SESSION_PREFIX)) {
+        sessionStorage.removeItem(k);
+      }
     }
   } catch {}
 }
