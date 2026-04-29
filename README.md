@@ -88,3 +88,4 @@ src/
 - **Profile** — Live stats, top-rated favorites per category, journal/currently/watchlist tabs, delete entries
 - **Settings** — Update username, sign out
 # Consumd-site
+# Consumd-site
