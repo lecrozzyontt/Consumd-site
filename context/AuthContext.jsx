@@ -61,7 +61,10 @@ export function AuthProvider({ children }) {
 
       // If profile exists → just use it
       if (existing) {
-        setProfile(existing);
+        setProfile((prev) => {
+          if (!prev || !prev.username) return existing;
+          return prev;
+        });
         return;
       }
 
@@ -70,7 +73,7 @@ export function AuthProvider({ children }) {
         .from('profiles')
         .insert([{
           id: userId,
-          username: null, // ✅ important: never auto-fill email
+          username: null,
           created_at: new Date().toISOString(),
         }])
         .select()
@@ -102,12 +105,14 @@ export function AuthProvider({ children }) {
     if (error) throw error;
 
     if (data.user) {
-      // Create profile with correct username ONLY ON SIGNUP
+      // wait a tick so auth state doesn't race ensureProfile
+      await new Promise(r => setTimeout(r, 50));
+
       const { data: profileData, error: profileError } = await supabase
         .from('profiles')
-        .insert([{
+        .upsert([{
           id: data.user.id,
-          username, // ✅ trusted user input only
+          username,
           created_at: new Date().toISOString(),
         }])
         .select()
