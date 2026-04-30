@@ -11,7 +11,7 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     console.log('[AuthContext] Initializing...');
 
-    const init = async () => {
+    const initSession = async () => {
       const { data: { session } } = await supabase.auth.getSession();
 
       const u = session?.user ?? null;
@@ -21,11 +21,11 @@ export function AuthProvider({ children }) {
       if (u) await ensureProfile(u.id, u);
     };
 
-    init();
+    initSession();
 
     const { data: { subscription } } =
       supabase.auth.onAuthStateChange(async (event, session) => {
-        console.log('[AuthContext] Auth state changed:', event);
+        console.log('[AuthContext] Auth event:', event);
 
         const u = session?.user ?? null;
 
@@ -43,7 +43,7 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * SAFE PROFILE CREATION (ONLY PLACE THAT CREATES PROFILE)
+   * SAFE PROFILE CREATION (ONLY PLACE THAT WRITES PROFILE)
    */
   async function ensureProfile(userId, authUser = null) {
     try {
@@ -58,13 +58,13 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      // ✅ If profile exists → use it
+      // If profile exists → just use it
       if (existing) {
         setProfile(existing);
         return;
       }
 
-      // 🔥 SAFE USERNAME FALLBACK (prevents NOT NULL crash)
+      // SAFE fallback username (prevents NULL crash)
       const username =
         authUser?.user_metadata?.username ||
         authUser?.email?.split('@')[0] ||
@@ -94,7 +94,7 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * SIGN UP (NO DB INSERT HERE — Supabase handles auth only)
+   * SIGN UP (NO PROFILE INSERT HERE)
    */
   async function signUp(email, password, username) {
     const cleanUsername = username?.trim();
