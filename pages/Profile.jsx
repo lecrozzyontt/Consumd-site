@@ -330,7 +330,7 @@ export default function Profile() {
                       </div>
                   }
 
-                  {log.rating && (
+                  {typeof log.rating === 'number' && (
                     <div className="recent-rating" style={{ display: 'inline-flex', gap: '2px', paddingBottom: '4px' }}>
                       <RatingStars rating={log.rating} size={12} />
                     </div>

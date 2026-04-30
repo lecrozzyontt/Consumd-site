@@ -95,7 +95,7 @@ export default function ReviewDetailPage() {
 
           {log.creator && <p className="review-creator">{log.creator}</p>}
 
-          {log.rating && (
+          {typeof log.rating === 'number' && (
             <div className="review-rating">
               {Array.from({ length: 5 }).map((_, i) => (
                 <span key={i} className={i < log.rating ? 'star-filled' : 'star-empty'}>★</span>

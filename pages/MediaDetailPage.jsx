@@ -692,7 +692,7 @@ export default function MediaDetailPage() {
                       {log.status.replace('_', ' ')}
                     </span>
                   </div>
-                  {log.rating && (
+                  {typeof log.rating === 'number' && (
                     <div className="activity-stars" style={{ display: 'inline-flex', marginTop: '0.25rem' }}>
                       <RatingStars rating={log.rating} readOnly={true} size="sm" />
                     </div>
