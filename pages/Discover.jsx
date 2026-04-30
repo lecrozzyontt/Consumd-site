@@ -101,7 +101,36 @@ export default function Discover() {
           <button
             key={f}
             className={`filter-pill ${filter === f ? 'active' : ''}`}
-            onClick={() => { setFilter(f); if (query) handleSearch(query); }}
+            onClick={() => {
+              setFilter(f);
+
+              // ensure search uses NEW filter value
+              if (query.trim()) {
+                clearTimeout(searchTimeout.current);
+
+                searchTimeout.current = setTimeout(async () => {
+                  setSearching(true);
+                  try {
+                    const searches = [];
+
+                    const activeFilter = f; // IMPORTANT: use clicked value directly
+
+                    if (activeFilter === 'all' || activeFilter === 'movies') searches.push(searchMovies(query));
+                    if (activeFilter === 'all' || activeFilter === 'shows')  searches.push(searchShows(query));
+                    if (activeFilter === 'all' || activeFilter === 'books')  searches.push(searchBooks(query));
+                    if (activeFilter === 'all' || activeFilter === 'games')  searches.push(searchGames(query));
+
+                    const results = await Promise.allSettled(searches);
+                    const combined = results.flatMap(r => r.value || []).slice(0, 40);
+                    setSearchResults(combined);
+                  } catch (e) {
+                    console.error(e);
+                  } finally {
+                    setSearching(false);
+                  }
+                }, 0);
+              }
+            }}
           >
             {f.charAt(0).toUpperCase() + f.slice(1)}
           </button>
