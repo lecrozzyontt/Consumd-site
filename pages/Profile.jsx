@@ -311,7 +311,11 @@ export default function Profile() {
           </div>
           <div className="recent-grid">
             {recent.map(log => (
-              <Link key={log.id} to={`/media/${log.media_id}`}>
+              <Link
+                key={log.id}
+                to={`/media/${log.media_id}`}
+                state={{ media: log }}
+              >
                 <div
                   className="recent-item"
                   title={`${log.title}${log.rating ? ` · ${log.rating} ★` : ''}`}

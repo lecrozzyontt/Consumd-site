@@ -199,7 +199,7 @@ export default function PublicProfilePage() {
                   {item ? (
                       <div
                         className="top4-item"
-                        onClick={() => navigate(`/media/${item.media_id}`)}
+                        onClick={() => navigate(`/media/${item.media_id}`, { state: { media: item } })}
                         style={{ cursor: "pointer" }}
                       >
                       <div className="top4-cover">
