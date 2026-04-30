@@ -73,7 +73,6 @@ export function AuthProvider({ children }) {
         .from('profiles')
         .insert([{
           id: userId,
-          username: null,
           created_at: new Date().toISOString(),
         }])
         .select()
@@ -112,9 +111,9 @@ export function AuthProvider({ children }) {
         .from('profiles')
         .upsert([{
           id: data.user.id,
-          username,
+          username: username,
           created_at: new Date().toISOString(),
-        }])
+        }], { onConflict: 'id' })
         .select()
         .single();
 
