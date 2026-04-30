@@ -16,22 +16,20 @@ export function AuthProvider({ children }) {
       setLoading(false);
 
       if (session?.user) {
-        ensureProfile(session.user.id);
+        ensureProfile(session.user.id, session.user);
       }
-    }).catch(err => {
-      console.error('[AuthContext] getSession error:', err);
-      setLoading(false);
     });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (event, session) => {
         console.log('[AuthContext] Auth state changed:', event);
 
-        setUser(session?.user ?? null);
+        const u = session?.user ?? null;
+        setUser(u);
         setLoading(false);
 
-        if (session?.user) {
-          await ensureProfile(session.user.id);
+        if (u) {
+          await ensureProfile(u.id, u);
         } else {
           setProfile(null);
         }
@@ -42,88 +40,92 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * PROFILE HANDLING (READ-ONLY SAFE)
-   * - Never guesses username
-   * - Never overwrites existing username
+   * PROFILE HANDLING
+   * - NEVER guesses username
+   * - NEVER duplicates inserts
    */
-  async function ensureProfile(userId) {
+  async function ensureProfile(userId, authUser = null) {
     try {
-      const { data: existing, error: fetchError } = await supabase
+      const { data: existing, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', userId)
         .maybeSingle();
 
-      if (fetchError) {
-        console.error(fetchError);
+      if (error) {
+        console.error('[ensureProfile] fetch error:', error);
         return;
       }
 
-      // 👇 THIS IS THE IMPORTANT PART
-      if (!existing) {
-        console.warn('[AuthContext] Profile deleted — signing out user');
-
-        await supabase.auth.signOut();
-        setUser(null);
-        setProfile(null);
-
-        window.location.href = '/auth';
+      // If profile exists → use it
+      if (existing) {
+        setProfile(existing);
         return;
       }
 
-      // Only create minimal profile (NO username guessing)
-      const { data: newProfile, error } = await supabase
+      // If profile missing → create it safely
+      const usernameFromAuth = authUser?.user_metadata?.username || null;
+
+      const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
-        .insert([{
-          id: userId,
-          created_at: new Date().toISOString(),
-        }])
+        .insert([
+          {
+            id: userId,
+            username: usernameFromAuth, // may be null (safe)
+            created_at: new Date().toISOString(),
+          },
+        ])
         .select()
         .single();
 
-      if (error) {
-        console.error('[AuthContext] Profile creation error:', error);
+      if (insertError) {
+        console.error('[ensureProfile] insert error:', insertError);
         return;
       }
 
       setProfile(newProfile);
     } catch (err) {
-      console.error('[AuthContext] ensureProfile error:', err);
+      console.error('[ensureProfile] crash:', err);
     }
   }
 
   /**
-   * SIGN UP (ONLY PLACE THAT SETS USERNAME)
+   * SIGN UP (correct username handling)
    */
   async function signUp(email, password, username) {
+    const cleanUsername = username?.trim();
+
+    if (!cleanUsername) {
+      throw new Error('Username is required');
+    }
+
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
       options: {
-        data: { username }, // stored in auth metadata
+        data: {
+          username: cleanUsername,
+        },
       },
     });
 
     if (error) throw error;
 
-    if (data.user) {
-      // wait a tick so auth state doesn't race ensureProfile
-      await new Promise(r => setTimeout(r, 50));
+    const user = data.user;
 
-      const { data: profileData, error: profileError } = await supabase
+    if (user) {
+      const { error: profileError } = await supabase
         .from('profiles')
-        .upsert([{
-          id: data.user.id,
-          username: username,
-          created_at: new Date().toISOString(),
-        }], { onConflict: 'id' })
-        .select()
-        .single();
+        .insert([
+          {
+            id: user.id,
+            username: cleanUsername,
+            created_at: new Date().toISOString(),
+          },
+        ]);
 
       if (profileError) {
-        console.error('[AuthContext] profile insert error:', profileError);
-      } else {
-        setProfile(profileData);
+        console.error('[signUp profile insert]', profileError);
       }
     }
 
@@ -139,7 +141,7 @@ export function AuthProvider({ children }) {
     if (error) throw error;
 
     if (data.user) {
-      await ensureProfile(data.user.id);
+      await ensureProfile(data.user.id, data.user);
     }
 
     return data;
@@ -147,6 +149,8 @@ export function AuthProvider({ children }) {
 
   async function signOut() {
     await supabase.auth.signOut();
+    setUser(null);
+    setProfile(null);
   }
 
   async function updateProfile(updates) {
@@ -164,21 +168,19 @@ export function AuthProvider({ children }) {
   }
 
   async function fetchProfile(userId) {
-    try {
-      const { data, error } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', userId)
-        .maybeSingle();
+    const { data, error } = await supabase
+      .from('profiles')
+      .select('*')
+      .eq('id', userId)
+      .maybeSingle();
 
-      if (error) throw error;
-
-      setProfile(data);
-      return data;
-    } catch (err) {
-      console.error('[AuthContext] fetchProfile error:', err);
+    if (error) {
+      console.error(error);
       return null;
     }
+
+    setProfile(data);
+    return data;
   }
 
   return (
