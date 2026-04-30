@@ -11,19 +11,20 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     console.log('[AuthContext] Initializing...');
 
-    supabase.auth.getSession().then(({ data: { session } }) => {
-      const u = session?.user ?? null;
+    const init = async () => {
+      const { data: { session } } = await supabase.auth.getSession();
 
+      const u = session?.user ?? null;
       setUser(u);
       setLoading(false);
 
-      if (u) {
-        ensureProfile(u.id, u);
-      }
-    });
+      if (u) await ensureProfile(u.id, u);
+    };
 
-    const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (event, session) => {
+    init();
+
+    const { data: { subscription } } =
+      supabase.auth.onAuthStateChange(async (event, session) => {
         console.log('[AuthContext] Auth state changed:', event);
 
         const u = session?.user ?? null;
@@ -36,17 +37,13 @@ export function AuthProvider({ children }) {
         } else {
           setProfile(null);
         }
-      }
-    );
+      });
 
     return () => subscription.unsubscribe();
   }, []);
 
   /**
-   * SAFE PROFILE CREATION
-   * - no null usernames
-   * - no duplicate inserts
-   * - no race crashes
+   * SAFE PROFILE CREATION (ONLY PLACE THAT CREATES PROFILE)
    */
   async function ensureProfile(userId, authUser = null) {
     try {
@@ -57,18 +54,20 @@ export function AuthProvider({ children }) {
         .maybeSingle();
 
       if (error) {
-        console.error('[ensureProfile fetch error]', error);
+        console.error('[ensureProfile] fetch error:', error);
         return;
       }
 
+      // ✅ If profile exists → use it
       if (existing) {
         setProfile(existing);
         return;
       }
 
-      // ALWAYS guarantee a valid username
+      // 🔥 SAFE USERNAME FALLBACK (prevents NOT NULL crash)
       const username =
-        authUser?.user_metadata?.username?.trim() ||
+        authUser?.user_metadata?.username ||
+        authUser?.email?.split('@')[0] ||
         `user_${userId.slice(0, 6)}`;
 
       const { data: newProfile, error: insertError } = await supabase
@@ -84,18 +83,18 @@ export function AuthProvider({ children }) {
         .single();
 
       if (insertError) {
-        console.error('[ensureProfile insert error]', insertError);
+        console.error('[ensureProfile] insert error:', insertError);
         return;
       }
 
       setProfile(newProfile);
     } catch (err) {
-      console.error('[ensureProfile crash]', err);
+      console.error('[ensureProfile] crash:', err);
     }
   }
 
   /**
-   * SIGN UP (NO DUPLICATE PROFILE INSERTS)
+   * SIGN UP (NO DB INSERT HERE — Supabase handles auth only)
    */
   async function signUp(email, password, username) {
     const cleanUsername = username?.trim();
@@ -116,16 +115,12 @@ export function AuthProvider({ children }) {
 
     if (error) throw error;
 
-    const u = data.user;
-
-    if (u) {
-      // ONLY create via ensureProfile (prevents duplicate insert crash)
-      await ensureProfile(u.id, u);
-    }
-
     return data;
   }
 
+  /**
+   * SIGN IN
+   */
   async function signIn(email, password) {
     const { data, error } = await supabase.auth.signInWithPassword({
       email,
@@ -141,12 +136,18 @@ export function AuthProvider({ children }) {
     return data;
   }
 
+  /**
+   * SIGN OUT
+   */
   async function signOut() {
     await supabase.auth.signOut();
     setUser(null);
     setProfile(null);
   }
 
+  /**
+   * UPDATE PROFILE
+   */
   async function updateProfile(updates) {
     const { data, error } = await supabase
       .from('profiles')
@@ -161,6 +162,9 @@ export function AuthProvider({ children }) {
     return data;
   }
 
+  /**
+   * FETCH PROFILE
+   */
   async function fetchProfile(userId) {
     const { data, error } = await supabase
       .from('profiles')
@@ -169,7 +173,7 @@ export function AuthProvider({ children }) {
       .maybeSingle();
 
     if (error) {
-      console.error(error);
+      console.error('[fetchProfile]', error);
       return null;
     }
 
