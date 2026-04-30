@@ -61,9 +61,31 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      // If profile exists → just use it
+      // If profile exists → check if the username needs correcting.
+      // user_metadata.username is set from the signup form and is always the
+      // intended value. If the stored username looks like an email prefix
+      // (i.e. it was auto-generated instead of using what the user typed),
+      // update it now so the account self-heals on next login.
       if (existing) {
-        setProfile(existing);
+        const metaUsername = authUser?.user_metadata?.username;
+        if (metaUsername && metaUsername !== existing.username) {
+          const { data: fixed, error: fixError } = await supabase
+            .from('profiles')
+            .update({ username: metaUsername })
+            .eq('id', userId)
+            .select()
+            .single();
+
+          if (fixError) {
+            console.error('[ensureProfile] username fix error:', fixError);
+            setProfile(existing); // fall back to what we have
+          } else {
+            console.log('[ensureProfile] fixed username:', existing.username, '→', metaUsername);
+            setProfile(fixed);
+          }
+        } else {
+          setProfile(existing);
+        }
         return;
       }
 
