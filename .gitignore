@@ -1,5 +1,2 @@
 .env
 node_modules/
-tmdb.js
-rawg.js
-supabase.js
