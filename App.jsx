@@ -45,7 +45,7 @@ function AppRoutes() {
           <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/settings" element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           <Route path="/log" element={<ProtectedRoute><LogPage /></ProtectedRoute>} />
-          <Route path="/media" element={<ProtectedRoute><MediaDetailPage /></ProtectedRoute>} />
+          <Route path="/media/:id" element={<ProtectedRoute><MediaDetailPage /></ProtectedRoute>} />
           <Route path="/review/:logId" element={<ProtectedRoute><ReviewDetailPage /></ProtectedRoute>} />
           <Route path="/messages/:friendId" element={<ProtectedRoute><MessagesPage /></ProtectedRoute>} />
           <Route path="/user/:userId" element={<PublicProfile />} />
