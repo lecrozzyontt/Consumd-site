@@ -12,11 +12,13 @@ export function AuthProvider({ children }) {
     console.log('[AuthContext] Initializing...');
 
     supabase.auth.getSession().then(({ data: { session } }) => {
-      setUser(session?.user ?? null);
+      const u = session?.user ?? null;
+
+      setUser(u);
       setLoading(false);
 
-      if (session?.user) {
-        ensureProfile(session.user.id, session.user);
+      if (u) {
+        ensureProfile(u.id, u);
       }
     });
 
@@ -25,6 +27,7 @@ export function AuthProvider({ children }) {
         console.log('[AuthContext] Auth state changed:', event);
 
         const u = session?.user ?? null;
+
         setUser(u);
         setLoading(false);
 
@@ -40,9 +43,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * PROFILE HANDLING
-   * - NEVER guesses username
-   * - NEVER duplicates inserts
+   * SAFE PROFILE CREATION
+   * - no null usernames
+   * - no duplicate inserts
+   * - no race crashes
    */
   async function ensureProfile(userId, authUser = null) {
     try {
@@ -53,25 +57,26 @@ export function AuthProvider({ children }) {
         .maybeSingle();
 
       if (error) {
-        console.error('[ensureProfile] fetch error:', error);
+        console.error('[ensureProfile fetch error]', error);
         return;
       }
 
-      // If profile exists → use it
       if (existing) {
         setProfile(existing);
         return;
       }
 
-      // If profile missing → create it safely
-      const usernameFromAuth = authUser?.user_metadata?.username || null;
+      // ALWAYS guarantee a valid username
+      const username =
+        authUser?.user_metadata?.username?.trim() ||
+        `user_${userId.slice(0, 6)}`;
 
       const { data: newProfile, error: insertError } = await supabase
         .from('profiles')
         .insert([
           {
             id: userId,
-            username: usernameFromAuth, // may be null (safe)
+            username,
             created_at: new Date().toISOString(),
           },
         ])
@@ -79,18 +84,18 @@ export function AuthProvider({ children }) {
         .single();
 
       if (insertError) {
-        console.error('[ensureProfile] insert error:', insertError);
+        console.error('[ensureProfile insert error]', insertError);
         return;
       }
 
       setProfile(newProfile);
     } catch (err) {
-      console.error('[ensureProfile] crash:', err);
+      console.error('[ensureProfile crash]', err);
     }
   }
 
   /**
-   * SIGN UP (correct username handling)
+   * SIGN UP (NO DUPLICATE PROFILE INSERTS)
    */
   async function signUp(email, password, username) {
     const cleanUsername = username?.trim();
@@ -111,22 +116,11 @@ export function AuthProvider({ children }) {
 
     if (error) throw error;
 
-    const user = data.user;
+    const u = data.user;
 
-    if (user) {
-      const { error: profileError } = await supabase
-        .from('profiles')
-        .insert([
-          {
-            id: user.id,
-            username: cleanUsername,
-            created_at: new Date().toISOString(),
-          },
-        ]);
-
-      if (profileError) {
-        console.error('[signUp profile insert]', profileError);
-      }
+    if (u) {
+      // ONLY create via ensureProfile (prevents duplicate insert crash)
+      await ensureProfile(u.id, u);
     }
 
     return data;
