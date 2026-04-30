@@ -43,7 +43,10 @@ export function AuthProvider({ children }) {
   }, []);
 
   /**
-   * SAFE PROFILE CREATION (ONLY PLACE THAT WRITES PROFILE)
+   * SAFE PROFILE CREATION (ONLY PLACE THAT WRITES PROFILE FOR OAUTH/FALLBACK)
+   * For email signup, the profile is inserted directly in signUp() with the
+   * correct username — this function just loads it if it already exists, or
+   * creates a fallback for OAuth users who have no username input.
    */
   async function ensureProfile(userId, authUser = null) {
     try {
@@ -64,9 +67,10 @@ export function AuthProvider({ children }) {
         return;
       }
 
-      // SAFE fallback username (prevents NULL crash)
+      // Fallback: only reached for OAuth users (no username input)
       const username =
         authUser?.user_metadata?.username ||
+        authUser?.user_metadata?.full_name?.replace(/\s+/g, '_').toLowerCase() ||
         authUser?.email?.split('@')[0] ||
         `user_${userId.slice(0, 6)}`;
 
@@ -94,7 +98,9 @@ export function AuthProvider({ children }) {
   }
 
   /**
-   * SIGN UP (NO PROFILE INSERT HERE)
+   * SIGN UP
+   * Profile is inserted HERE with the exact username the user typed,
+   * before onAuthStateChange can race and fall back to the email prefix.
    */
   async function signUp(email, password, username) {
     const cleanUsername = username?.trim();
@@ -114,6 +120,28 @@ export function AuthProvider({ children }) {
     });
 
     if (error) throw error;
+
+    // Insert the profile immediately using the username from the form.
+    // upsert is safe — if onAuthStateChange already ran, it won't duplicate.
+    if (data.user) {
+      const { data: newProfile, error: profileError } = await supabase
+        .from('profiles')
+        .upsert([
+          {
+            id: data.user.id,
+            username: cleanUsername,
+            created_at: new Date().toISOString(),
+          },
+        ])
+        .select()
+        .single();
+
+      if (profileError) {
+        console.error('[signUp] profile upsert error:', profileError);
+      } else {
+        setProfile(newProfile);
+      }
+    }
 
     return data;
   }
