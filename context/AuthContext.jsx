@@ -55,16 +55,19 @@ export function AuthProvider({ children }) {
         .maybeSingle();
 
       if (fetchError) {
-        console.error('[AuthContext] Profile fetch error:', fetchError);
+        console.error(fetchError);
         return;
       }
 
-      // If profile exists → just use it
-      if (existing) {
-        setProfile((prev) => {
-          if (!prev || !prev.username) return existing;
-          return prev;
-        });
+      // 👇 THIS IS THE IMPORTANT PART
+      if (!existing) {
+        console.warn('[AuthContext] Profile deleted — signing out user');
+
+        await supabase.auth.signOut();
+        setUser(null);
+        setProfile(null);
+
+        window.location.href = '/auth';
         return;
       }
 
