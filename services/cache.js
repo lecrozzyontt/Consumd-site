@@ -1,5 +1,5 @@
 const memCache = new Map();   // key -> { value, expires }
-const inflight = new Map();   // key -> Promise<value>
+const inflight = new Map();   // key -> Promise
 
 const SESSION_PREFIX = 'consumd_cache:';
 
@@ -14,7 +14,6 @@ function readSession(key) {
     const parsed = JSON.parse(raw);
     if (!parsed || typeof parsed.expires !== 'number') return null;
 
-    // expired
     if (parsed.expires < Date.now()) {
       sessionStorage.removeItem(SESSION_PREFIX + key);
       return null;
@@ -28,73 +27,65 @@ function readSession(key) {
 
 function writeSession(key, entry) {
   try {
-    sessionStorage.setItem(
-      SESSION_PREFIX + key,
-      JSON.stringify(entry)
-    );
-  } catch {
-    // ignore quota / disabled storage
-  }
+    sessionStorage.setItem(SESSION_PREFIX + key, JSON.stringify(entry));
+  } catch {}
 }
 
 /* -----------------------------------------
-   OpenLibrary-safe validity check
+   Validation (OpenLibrary-safe)
 ------------------------------------------ */
-function isBadValue(value) {
-  if (value == null) return true;
+function isBadValue(v) {
+  if (!v) return true;
 
-  if (Array.isArray(value) && value.length === 0) return true;
+  if (Array.isArray(v)) return v.length === 0;
 
-  if (typeof value === 'object') {
-    if (Object.keys(value).length === 0) return true;
-    if (value.error) return true;
+  if (typeof v === 'object') {
+    if (Object.keys(v).length === 0) return true;
+    if (v.error) return true;
 
-    // OpenLibrary-specific safety checks
-    if (value.docs && value.docs.length === 0) return true;
-    if (value.works && value.works.length === 0) return true;
+    if (v.docs && v.docs.length === 0) return true;
+    if (v.works && v.works.length === 0) return true;
   }
 
   return false;
 }
 
 /* -----------------------------------------
-   Main cache function
+   Main cache
 ------------------------------------------ */
 export async function cached(key, fetcher, opts = {}) {
-  const ttl = opts.ttl ?? 10 * 60 * 1000;
+  const ttl = opts.ttl ?? 600000; // 10 min
   const persist = opts.persist ?? true;
   const force = opts.force ?? false;
 
   const now = Date.now();
 
-  // 1. FORCE bypass
+  // FORCE refresh
   if (force) {
     memCache.delete(key);
     try { sessionStorage.removeItem(SESSION_PREFIX + key); } catch {}
   }
 
-  // 2. Memory cache
+  // 1. Memory cache (fastest path)
   const mem = memCache.get(key);
   if (mem && mem.expires > now) {
     return mem.value;
   }
 
-  // 3. Session cache hydration
+  // 2. Session cache
   if (persist) {
     const ses = readSession(key);
-
     if (ses && !isBadValue(ses.value)) {
       memCache.set(key, ses);
       return ses.value;
     }
   }
 
-  // 4. Deduplicate inflight requests
-  if (inflight.has(key)) {
-    return inflight.get(key);
-  }
+  // 3. Deduplicate inflight
+  const existing = inflight.get(key);
+  if (existing) return existing;
 
-  const p = fetcher()
+  const promise = fetcher()
     .then((value) => {
       if (!isBadValue(value)) {
         const entry = {
@@ -104,23 +95,20 @@ export async function cached(key, fetcher, opts = {}) {
 
         memCache.set(key, entry);
 
-        if (persist) {
-          writeSession(key, entry);
-        }
+        if (persist) writeSession(key, entry);
       }
-
       return value;
     })
     .catch((err) => {
-      console.error('[cache fetcher error]', key, err);
+      console.error('[cache error]', key, err);
       return [];
     })
     .finally(() => {
       inflight.delete(key);
     });
 
-  inflight.set(key, p);
-  return p;
+  inflight.set(key, promise);
+  return promise;
 }
 
 /* -----------------------------------------
@@ -128,25 +116,23 @@ export async function cached(key, fetcher, opts = {}) {
 ------------------------------------------ */
 export function invalidate(key) {
   memCache.delete(key);
-  try {
-    sessionStorage.removeItem(SESSION_PREFIX + key);
-  } catch {}
+  try { sessionStorage.removeItem(SESSION_PREFIX + key); } catch {}
 }
 
 /* -----------------------------------------
-   Invalidate by prefix
+   Invalidate prefix (faster loop)
 ------------------------------------------ */
 export function invalidatePrefix(prefix) {
-  for (const k of memCache.keys()) {
-    if (k.startsWith(prefix)) {
-      memCache.delete(k);
-    }
+  for (const key of memCache.keys()) {
+    if (key.startsWith(prefix)) memCache.delete(key);
   }
 
   try {
+    const fullPrefix = SESSION_PREFIX + prefix;
+
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const k = sessionStorage.key(i);
-      if (k && k.startsWith(SESSION_PREFIX + prefix)) {
+      if (k?.startsWith(fullPrefix)) {
         sessionStorage.removeItem(k);
       }
     }
@@ -154,7 +140,7 @@ export function invalidatePrefix(prefix) {
 }
 
 /* -----------------------------------------
-   Clear all cache
+   Clear all
 ------------------------------------------ */
 export function clearAll() {
   memCache.clear();
@@ -162,7 +148,7 @@ export function clearAll() {
   try {
     for (let i = sessionStorage.length - 1; i >= 0; i--) {
       const k = sessionStorage.key(i);
-      if (k && k.startsWith(SESSION_PREFIX)) {
+      if (k?.startsWith(SESSION_PREFIX)) {
         sessionStorage.removeItem(k);
       }
     }
