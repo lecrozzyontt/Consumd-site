@@ -238,14 +238,14 @@ export default function MediaDetailPage() {
                 <span className="avg-sub">{activity.filter(l => l.rating).length} ratings</span>
               </div>
             )}
-            {isGame && media.metacritic && (
+            {/* {isGame && media.metacritic && (
               <div className="detail-metacritic">
                 <span className="meta-score" style={{ color: media.metacritic >= 75 ? '#4ade80' : media.metacritic >= 50 ? '#f59e0b' : '#f87171' }}>
                   {media.metacritic}
                 </span>
                 <span className="api-sub">Metacritic</span>
               </div>
-            )}
+            )} */}
           </div>
 
           {userLog && (
