@@ -197,7 +197,11 @@ export default function PublicProfilePage() {
               return (
                 <div key={i} className="top4-slot">
                   {item ? (
-                    <div className="top4-item">
+                      <div
+                        className="top4-item"
+                        onClick={() => navigate(`/media/${item.media_id}`)}
+                        style={{ cursor: "pointer" }}
+                      >
                       <div className="top4-cover">
                         {item.cover_url
                           ? <img src={item.cover_url} alt={item.title} />

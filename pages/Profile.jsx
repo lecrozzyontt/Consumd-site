@@ -311,45 +311,30 @@ export default function Profile() {
           </div>
           <div className="recent-grid">
             {recent.map(log => (
-              <div key={log.id} className="recent-item"
-                title={`${log.title}${log.rating ? ` · ${log.rating} ★` : ''}`}>
-                {log.cover_url
-                  ? <img src={log.cover_url} alt={log.title} loading="lazy" />
-                  : <div className="recent-placeholder"
-                      style={{ borderTop: `3px solid ${TYPE_COLORS[log.media_type]}` }}>
-                      {log.title?.[0]}
+              <Link key={log.id} to={`/media/${log.media_id}`}>
+                <div
+                  className="recent-item"
+                  title={`${log.title}${log.rating ? ` · ${log.rating} ★` : ''}`}
+                >
+                  {log.cover_url
+                    ? <img src={log.cover_url} alt={log.title} loading="lazy" />
+                    : <div
+                        className="recent-placeholder"
+                        style={{ borderTop: `3px solid ${TYPE_COLORS[log.media_type]}` }}
+                      >
+                        {log.title?.[0]}
+                      </div>
+                  }
+
+                  {log.rating && (
+                    <div className="recent-rating" style={{ display: 'inline-flex', gap: '2px', paddingBottom: '4px' }}>
+                      <RatingStars rating={log.rating} size={12} />
                     </div>
-                }
-                {log.rating ? (
-                  <div className="recent-rating" style={{ display: 'inline-flex', gap: '2px', paddingBottom: '4px', zIndex: 2 }}>
-                    {Array.from({ length: 5 }).map((_, i) => {
-                      const val = i + 1;
-                      const isFull = log.rating >= val;
-                      const isHalf = !isFull && log.rating >= val - 0.5;
-                      
-                      return (
-                        <svg key={i} width="14" height="14" viewBox="0 0 24 24" 
-                             fill={isFull ? "#93c5fd" : "none"} 
-                             stroke="#93c5fd" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round">
-                          {isHalf && (
-                            <defs>
-                              <linearGradient id={`half-${log.id}-${i}`}>
-                                <stop offset="50%" stopColor="#93c5fd" />
-                                <stop offset="50%" stopColor="transparent" />
-                              </linearGradient>
-                            </defs>
-                          )}
-                          <polygon 
-                            points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"
-                            fill={isFull ? "#93c5fd" : isHalf ? `url(#half-${log.id}-${i})` : "none"}
-                          />
-                        </svg>
-                      );
-                    })}
-                  </div>
-                ) : null}
-                <div className="recent-type-dot" style={{ background: TYPE_COLORS[log.media_type] }} />
-              </div>
+                  )}
+
+                  <div className="recent-type-dot" style={{ background: TYPE_COLORS[log.media_type] }} />
+                </div>
+              </Link>
             ))}
           </div>
         </section>
